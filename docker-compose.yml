@@ -1,0 +1,17 @@
+services:
+  visarj-api:
+    build:
+      context: . 
+      dockerfile: Dockerfile 
+    container_name: visarj_api_container
+    restart: always
+    ports:
+      - "8000:8000" 
+    environment:
+      - DB_USER=sevisa
+      - DB_PASSWORD=ASc67jX0ZaP2zS3s
+      - DB_SERVER=10.42.88.226
+      - DB_NAME=Visarj
+      - DB_DRIVER=ODBC Driver 17 for SQL Server
+      
+    command: python -m gunicorn app:app --workers 4 --bind 0.0.0.0:8000 --worker-class uvicorn.workers.UvicornWorker
