@@ -28,26 +28,6 @@ def get_db():
     finally:
         db.close()
 
-COORDENACOES_CACHE = {}
-
-def load_coordenacoes_cache():
-    engine = get_engine()
-    try:
-        with engine.connect() as connection:
-            sql_query_string = "SELECT * FROM dbo.tb_coordenacao"
-            resultado = connection.execute(text(sql_query_string)) 
-            global COORDENACOES_CACHE
-            for row in resultado.fetchall():
-                row_dict = row._asdict()
-                COORDENACOES_CACHE[row_dict['codigo']] = row_dict
-    except Exception as e:
-        raise RuntimeError("Falha ao inicializar a API: Não foi possível carregar dados estáticos.") from e
-
-try:
-    load_coordenacoes_cache()
-except RuntimeError:
-    raise
-
 
 app = FastAPI(title="API de VISARJ", 
               description="API para gerenciamento e consulta de Ordens de Serviço (OS) e Inspeção.", 
@@ -64,13 +44,12 @@ async def db_exception_handler(request, exc):
 @app.get("/ordem_servico/{ordem_servico}")
 def get_ordem_servico(ordem_servico: str, db=Depends(get_db)):
     "Retorna dados da Ordem de Serviço"
-    query = text("SELECT TOP 1 * FROM os WHERE codigo = :ordem_servico")
+    query = text("SELECT TOP 1 o.*, c.nome coordenacao_descricao, d.nome divisao_descricao FROM os o left join tb_coordenacao c on c.codigo = o.coordenacao left join tb_divisao d on d.codigo = o.divisao WHERE o.codigo = :ordem_servico")
     resultado_dict = db.execute(query, {"ordem_servico": ordem_servico}).first()
     if resultado_dict is None:
         raise HTTPException(status_code=404, detail="OS não encontrada")
     resultado_dict = resultado_dict._asdict()
-    resultado_dict['coordenacao_descricao'] = COORDENACOES_CACHE[resultado_dict['coordenacao']]['nome']
-    equipe_query = text("""select oe.lider, oe.usuario, u.matricula, u.nome, u.telefone from os_equipe oe inner join usuarios u on u.codigo = oe.usuario where oe.os = :ordem_servico""")     
+    equipe_query = text("Select oe.lider, oe.usuario, u.matricula, u.nome, u.telefone from os_equipe oe inner join usuarios u on u.codigo = oe.usuario where oe.os = :ordem_servico")
     resultado = db.execute(equipe_query, {"ordem_servico": ordem_servico})
     resultado_dict['equipe'] = [row._asdict() for row in resultado.fetchall()]
     return resultado_dict
@@ -78,12 +57,11 @@ def get_ordem_servico(ordem_servico: str, db=Depends(get_db)):
 @app.get("/inspecao/{codigo_inspecao}")
 def get_inspecao(codigo_inspecao: str, db=Depends(get_db)):
     "Retorna dados da Inspeção"
-    query = text("SELECT TOP 1 * FROM inspecao WHERE codigo = :codigo_inspecao")
+    query = text("SELECT TOP 1 *  FROM inspecao WHERE codigo = :codigo_inspecao")
     resultado_dict = db.execute(query, {"codigo_inspecao": codigo_inspecao}).first()
     if resultado_dict is None:
         raise HTTPException(status_code=404, detail="Inspeção não encontrada")
     resultado_dict = resultado_dict._asdict()
-    resultado_dict['coordenacao_descricao'] = COORDENACOES_CACHE[resultado_dict['coordenacao']]['nome']
     campos_remover = ['token_acesso']
     for campo in campos_remover:
         if campo in resultado_dict:
@@ -93,7 +71,7 @@ def get_inspecao(codigo_inspecao: str, db=Depends(get_db)):
 @app.get("/usuario/{numero_usuario}")
 def get_usuario(numero_usuario: str, db=Depends(get_db)):
     "Retorna dados do usuário"
-    usuario_query = text("SELECT TOP 1 * FROM usuarios WHERE codigo = :numero_usuario")
+    usuario_query = text("SELECT TOP 1 u.*, gr.nome grupo_descricao, p.nome perfil_descricao, cg.nome cargo_descricao, m.nome municipio_descricao, m.uf uf_descricao, c.nome coordenacao_descricao FROM usuarios u left join tb_perfil p on p.codigo = u.perfil left join tb_grupo gr on gr.codigo = u.grupo left join tb_cargo cg on cg.codigo = u.cargo left join tb_coordenacao c on c.codigo = u.coordenacao left join tb_municipio m on m.codigo = u.municipio WHERE u.codigo = :numero_usuario")
     resultado_funcionario = db.execute(usuario_query, {"numero_usuario": numero_usuario}).first()
     if resultado_funcionario is None:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
@@ -107,16 +85,25 @@ def get_usuario(numero_usuario: str, db=Depends(get_db)):
 @app.get("/lista_inspecao")
 def get_lista_inspecao(rows:int = 10, offset:int = 0, db=Depends(get_db)):
     "Listagem das inspeções"
-    sql_query_string = "SELECT codigo, os, data_cadastro, coordenacao, divisao, situacao FROM dbo.inspecao ORDER BY codigo DESC OFFSET :offset ROWS FETCH NEXT :rows ROWS ONLY"
+    sql_query_string = "SELECT i.codigo, i.os, i.data_cadastro, i.coordenacao, c.nome coordenacao_descricao, i.divisao, d.nome divisao_descricao, i.situacao FROM dbo.inspecao i left join tb_divisao d on d.codigo = i.divisao left join tb_coordenacao c on c.codigo = i.coordenacao ORDER BY codigo DESC OFFSET :offset ROWS FETCH NEXT :rows ROWS ONLY"
     resultado = db.execute(text(sql_query_string), {"rows": min(100,rows), "offset": offset}) 
     return [row._asdict() for row in resultado.fetchall()]
 
 @app.get("/lista_ordem_servico")
 def get_lista_ordem_servico(rows:int = 10, offset:int = 0, db=Depends(get_db)):
     "Listagem das ordens de serviço"
-    sql_query_string = "SELECT codigo, data_cadastro, coordenacao, situacao FROM dbo.os ORDER BY codigo DESC OFFSET :offset ROWS FETCH NEXT :rows ROWS ONLY"
+    sql_query_string = "SELECT o.codigo, o.data_cadastro, o.coordenacao, c.nome coordenacao_descricao, o.divisao, d.nome divisao_descricao, o.situacao FROM dbo.os o left join tb_divisao d on d.codigo = o.divisao left join tb_coordenacao c on c.codigo = o.coordenacao ORDER BY codigo DESC OFFSET :offset ROWS FETCH NEXT :rows ROWS ONLY"
     resultado = db.execute(text(sql_query_string), {"rows": min(100,rows), "offset": offset})  
     return [row._asdict() for row in resultado.fetchall()]
+
+@app.get("/lista_ordem_servico_sem_inspecao")
+def get_lista_ordem_servico_sem_inspecao(rows:int = 10, offset:int = 0, db=Depends(get_db)):
+    "Listagem das ordens de serviço"
+    sql_query_string = "select o.* from os o left join inspecao i on i.os = o.codigo where i.codigo is null order by o.codigo  DESC OFFSET :offset ROWS FETCH NEXT :rows ROWS ONLY"
+    resultado = db.execute(text(sql_query_string), {"rows": min(100,rows), "offset": offset})  
+    return [row._asdict() for row in resultado.fetchall()]
+
+
 
 @app.get("/health")
 def get_lista_ordem_servico(db=Depends(get_db)):
