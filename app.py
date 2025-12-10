@@ -29,8 +29,8 @@ def get_db():
         db.close()
 
 
-app = FastAPI(title="API de VISARJ", 
-              description="API para gerenciamento e consulta de Ordens de Serviço (OS) e Inspeção.", 
+app = FastAPI(title="API de Consulta do VigDigital", 
+              description="API para gerenciamento e consulta de Ordens de Serviço (OS) e Inspeção do ViDigital.", 
               version="1.0.0")
 
 @app.exception_handler(SQLAlchemyError)
@@ -41,7 +41,7 @@ async def db_exception_handler(request, exc):
         detail_msg = "Erro interno ao acessar o banco de dados."
     return HTTPException(status_code=500, detail=detail_msg)
 
-@app.get("/ordem_servico/{ordem_servico}")
+@app.get("/consultavigdigital/v1/ordem_servico/{ordem_servico}")
 def get_ordem_servico(ordem_servico: str, db=Depends(get_db)):
     "Retorna dados da Ordem de Serviço"
     query = text("SELECT TOP 1 o.*, c.nome coordenacao_descricao, d.nome divisao_descricao FROM os o left join tb_coordenacao c on c.codigo = o.coordenacao left join tb_divisao d on d.codigo = o.divisao WHERE o.codigo = :ordem_servico")
@@ -54,7 +54,7 @@ def get_ordem_servico(ordem_servico: str, db=Depends(get_db)):
     resultado_dict['equipe'] = [row._asdict() for row in resultado.fetchall()]
     return resultado_dict
 
-@app.get("/inspecao/{codigo_inspecao}")
+@app.get("/consultavigdigital/v1/inspecao/{codigo_inspecao}")
 def get_inspecao(codigo_inspecao: str, db=Depends(get_db)):
     "Retorna dados da Inspeção"
     query = text("SELECT TOP 1 *  FROM inspecao WHERE codigo = :codigo_inspecao")
@@ -68,7 +68,7 @@ def get_inspecao(codigo_inspecao: str, db=Depends(get_db)):
             del resultado_dict[campo]
     return resultado_dict
 
-@app.get("/usuario/{numero_usuario}")
+@app.get("/consultavigdigital/v1/usuario/{numero_usuario}")
 def get_usuario(numero_usuario: str, db=Depends(get_db)):
     "Retorna dados do usuário"
     usuario_query = text("SELECT TOP 1 u.*, gr.nome grupo_descricao, p.nome perfil_descricao, cg.nome cargo_descricao, m.nome municipio_descricao, m.uf uf_descricao, c.nome coordenacao_descricao FROM usuarios u left join tb_perfil p on p.codigo = u.perfil left join tb_grupo gr on gr.codigo = u.grupo left join tb_cargo cg on cg.codigo = u.cargo left join tb_coordenacao c on c.codigo = u.coordenacao left join tb_municipio m on m.codigo = u.municipio WHERE u.codigo = :numero_usuario")
@@ -82,21 +82,21 @@ def get_usuario(numero_usuario: str, db=Depends(get_db)):
             del resultado_dict[campo]
     return resultado_dict
 
-@app.get("/lista_inspecao")
+@app.get("/consultavigdigital/v1/lista_inspecao")
 def get_lista_inspecao(rows:int = 10, offset:int = 0, db=Depends(get_db)):
     "Listagem das inspeções"
     sql_query_string = "SELECT i.codigo, i.os, i.data_cadastro, i.coordenacao, c.nome coordenacao_descricao, i.divisao, d.nome divisao_descricao, i.situacao FROM dbo.inspecao i left join tb_divisao d on d.codigo = i.divisao left join tb_coordenacao c on c.codigo = i.coordenacao ORDER BY codigo DESC OFFSET :offset ROWS FETCH NEXT :rows ROWS ONLY"
     resultado = db.execute(text(sql_query_string), {"rows": min(100,rows), "offset": offset}) 
     return [row._asdict() for row in resultado.fetchall()]
 
-@app.get("/lista_ordem_servico")
+@app.get("/consultavigdigital/v1/lista_ordem_servico")
 def get_lista_ordem_servico(rows:int = 10, offset:int = 0, db=Depends(get_db)):
     "Listagem das ordens de serviço"
     sql_query_string = "SELECT o.codigo, o.data_cadastro, o.coordenacao, c.nome coordenacao_descricao, o.divisao, d.nome divisao_descricao, o.situacao FROM dbo.os o left join tb_divisao d on d.codigo = o.divisao left join tb_coordenacao c on c.codigo = o.coordenacao ORDER BY codigo DESC OFFSET :offset ROWS FETCH NEXT :rows ROWS ONLY"
     resultado = db.execute(text(sql_query_string), {"rows": min(100,rows), "offset": offset})  
     return [row._asdict() for row in resultado.fetchall()]
 
-@app.get("/lista_ordem_servico_sem_inspecao")
+@app.get("/consultavigdigital/v1/lista_ordem_servico_sem_inspecao")
 def get_lista_ordem_servico_sem_inspecao(rows:int = 10, offset:int = 0, db=Depends(get_db)):
     "Listagem das ordens de serviço"
     sql_query_string = "select o.* from os o left join inspecao i on i.os = o.codigo where i.codigo is null order by o.codigo  DESC OFFSET :offset ROWS FETCH NEXT :rows ROWS ONLY"
@@ -105,7 +105,7 @@ def get_lista_ordem_servico_sem_inspecao(rows:int = 10, offset:int = 0, db=Depen
 
 
 
-@app.get("/health")
+@app.get("/consultavigdigital/v1/health")
 def get_lista_ordem_servico(db=Depends(get_db)):
     "Verifica a disponibilidade da API"
     return {"status":"OK"}
